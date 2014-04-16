@@ -4,20 +4,20 @@
 require 'date'
 module ActiveMerchant
   module Shipping
-
+    
     # :key is your developer API key
     # :password is your API password
     # :account is your FedEx account number
     # :login is your meter number
     class FedEx < Carrier
       self.retry_safe = true
-
+      
       cattr_reader :name
       @@name = "FedEx"
-
+      
       TEST_URL = 'https://gatewaybeta.fedex.com:443/xml'
       LIVE_URL = 'https://gateway.fedex.com:443/xml'
-
+      
       CarrierCodes = {
         "fedex_ground" => "FDXG",
         "fedex_express" => "FDXE"
@@ -25,7 +25,7 @@ module ActiveMerchant
 
       DELIVERY_ADDRESS_NODE_NAMES = %w(DestinationAddress ActualDeliveryAddress)
       SHIPPER_ADDRESS_NODE_NAMES  = %w(ShipperAddress)
-
+      
       ServiceTypes = {
         "PRIORITY_OVERNIGHT" => "FedEx Priority Overnight",
         "PRIORITY_OVERNIGHT_SATURDAY_DELIVERY" => "FedEx Priority Overnight Saturday Delivery",
@@ -79,7 +79,7 @@ module ActiveMerchant
         'third_party' => 'THIRDPARTY',
         'collect' => 'COLLECT'
       }
-
+      
       PackageIdentifierTypes = {
         'tracking_number' => 'TRACKING_NUMBER_OR_DOORTAG',
         'door_tag' => 'TRACKING_NUMBER_OR_DOORTAG',
@@ -134,25 +134,25 @@ module ActiveMerchant
       def self.service_name_for_code(service_code)
         ServiceTypes[service_code] || "FedEx #{service_code.titleize.sub(/Fedex /, '')}"
       end
-
+      
       def requirements
         [:key, :password, :account, :login]
       end
-
+      
       def find_rates(origin, destination, packages, options = {})
         options = @options.update(options)
         packages = Array(packages)
-
+        
         rate_request = build_rate_request(origin, destination, packages, options)
-
+        
         response = commit(save_request(rate_request), (options[:test] || false)).gsub(/<(\/)?.*?\:(.*?)>/, '<\1\2>')
 
         parse_rate_response(origin, destination, packages, response, options)
       end
-
+      
       def find_tracking_info(tracking_number, options={})
         options = @options.update(options)
-
+        
         tracking_request = build_tracking_request(tracking_number, options)
         response = commit(save_request(tracking_request), (options[:test] || false)).gsub(/<(\/)?.*?\:(.*?)>/, '<\1\2>')
         parse_tracking_response(response, options)
@@ -172,12 +172,12 @@ module ActiveMerchant
             version_node << XmlNode.new('Intermediate', '0')
             version_node << XmlNode.new('Minor', '0')
           end
-
+          
           # Returns delivery dates
           root_node << XmlNode.new('ReturnTransitAndCommit', true)
           # Returns saturday delivery shipping options when available
           root_node << XmlNode.new('VariableOptions', 'SATURDAY_DELIVERY')
-
+          
           root_node << XmlNode.new('RequestedShipment') do |rs|
             rs << XmlNode.new('ShipTimestamp', ship_timestamp(options[:turn_around_time]))
 
@@ -188,7 +188,7 @@ module ActiveMerchant
               rs << XmlNode.new('DropoffType', options[:dropoff_type] || 'REGULAR_PICKUP')
               rs << XmlNode.new('PackagingType', options[:packaging_type] || 'YOUR_PACKAGING')
             end
-
+            
             rs << build_location_node('Shipper', (options[:shipper] || origin))
             rs << build_location_node('Recipient', destination)
             if options[:shipper] and options[:shipper] != origin
@@ -278,11 +278,11 @@ module ActiveMerchant
       def build_rate_request_types_node(type = 'ACCOUNT')
         XmlNode.new('RateRequestTypes', type)
       end
-
+      
       def build_tracking_request(tracking_number, options={})
         xml_request = XmlNode.new('TrackRequest', 'xmlns' => 'http://fedex.com/ws/track/v3') do |root_node|
           root_node << build_request_header
-
+          
           # Version
           root_node << XmlNode.new('Version') do |version_node|
             version_node << XmlNode.new('ServiceId', 'trck')
@@ -290,19 +290,19 @@ module ActiveMerchant
             version_node << XmlNode.new('Intermediate', '0')
             version_node << XmlNode.new('Minor', '0')
           end
-
+          
           root_node << XmlNode.new('PackageIdentifier') do |package_node|
             package_node << XmlNode.new('Value', tracking_number)
             package_node << XmlNode.new('Type', PackageIdentifierTypes[options['package_identifier_type'] || 'tracking_number'])
           end
-
+          
           root_node << XmlNode.new('ShipDateRangeBegin', options['ship_date_range_begin']) if options['ship_date_range_begin']
           root_node << XmlNode.new('ShipDateRangeEnd', options['ship_date_range_end']) if options['ship_date_range_end']
           root_node << XmlNode.new('IncludeDetailedScans', 1)
         end
         xml_request.to_s
       end
-
+      
       def build_request_header
         web_authentication_detail = XmlNode.new('WebAuthenticationDetail') do |wad|
           wad << XmlNode.new('UserCredential') do |uc|
@@ -310,19 +310,19 @@ module ActiveMerchant
             uc << XmlNode.new('Password', @options[:password])
           end
         end
-
+        
         client_detail = XmlNode.new('ClientDetail') do |cd|
           cd << XmlNode.new('AccountNumber', @options[:account])
           cd << XmlNode.new('MeterNumber', @options[:login])
         end
-
+        
         trasaction_detail = XmlNode.new('TransactionDetail') do |td|
           td << XmlNode.new('CustomerTransactionId', 'ActiveShipping') # TODO: Need to do something better with this..
         end
-
+        
         [web_authentication_detail, client_detail, trasaction_detail]
       end
-
+            
       def build_location_node(name, location)
         location_node = XmlNode.new(name) do |xml_node|
           xml_node << XmlNode.new('Address') do |address_node|
@@ -337,22 +337,22 @@ module ActiveMerchant
           end
         end
       end
-
+      
       def parse_rate_response(origin, destination, packages, response, options)
         rate_estimates = []
         success, message = nil
-
+        
         xml = build_document(response)
         root_node = xml.elements['RateReply']
-
+        
         success = response_success?(xml)
         message = response_message(xml)
-
+        
         root_node.elements.each('RateReplyDetails') do |rated_shipment|
           service_code = rated_shipment.get_text('ServiceType').to_s
           is_saturday_delivery = rated_shipment.get_text('AppliedOptions').to_s == 'SATURDAY_DELIVERY'
           service_type = is_saturday_delivery ? "#{service_code}_SATURDAY_DELIVERY" : service_code
-
+          
           transit_time = rated_shipment.get_text('TransitTime').to_s if service_code == "FEDEX_GROUND"
           max_transit_time = rated_shipment.get_text('MaximumTransitTime').to_s if service_code == "FEDEX_GROUND"
 
@@ -367,10 +367,9 @@ module ActiveMerchant
                               :total_price => rated_shipment.get_text('RatedShipmentDetails/ShipmentRateDetail/TotalNetCharge/Amount').to_s.to_f,
                               :currency => currency,
                               :packages => packages,
-                              :delivery_range => delivery_range,
-                              :total_discount => rated_shipment.get_text('RatedShipmentDetails/ShipmentRateDetail/TotalFreightDiscounts/Amount').to_s.to_f)
+                              :delivery_range => delivery_range)
         end
-
+		
         if rate_estimates.empty?
           success = false
           message = "No shipping rates could be found for the destination address" if message.blank?
@@ -381,7 +380,7 @@ module ActiveMerchant
 
       def delivery_range_from(transit_time, max_transit_time, delivery_timestamp, options)
         delivery_range = [delivery_timestamp, delivery_timestamp]
-
+        
         #if there's no delivery timestamp but we do have a transit time, use it
         if delivery_timestamp.blank? && transit_time.present?
           transit_range  = parse_transit_times([transit_time,max_transit_time.presence || transit_time])
@@ -410,10 +409,10 @@ module ActiveMerchant
       def parse_tracking_response(response, options)
         xml = build_document(response)
         root_node = xml.elements['TrackReply']
-
+        
         success = response_success?(xml)
         message = response_message(xml)
-
+        
         if success
           tracking_number, shipper_address, origin, destination, status = nil
           status_code, status_description, ship_time = nil
@@ -447,7 +446,7 @@ module ActiveMerchant
           ship_time = extract_timestamp(tracking_details, 'ShipTimestamp')
           actual_delivery_time = extract_timestamp(tracking_details, 'ActualDeliveryTimestamp')
           scheduled_delivery_time = extract_timestamp(tracking_details, 'EstimatedDeliveryTimestamp')
-
+          
           tracking_details.elements.each('Events') do |event|
             address  = event.elements['Address']
 
@@ -456,7 +455,7 @@ module ActiveMerchant
             zip_code = address.get_text('PostalCode').to_s
             country  = address.get_text('CountryCode').to_s
             next if country.blank?
-
+            
             location = Location.new(:city => city, :state => state, :postal_code => zip_code, :country => country)
             description = event.get_text('EventDescription').to_s
 
@@ -468,7 +467,7 @@ module ActiveMerchant
           shipment_events = shipment_events.sort_by(&:time)
 
         end
-
+        
         TrackingResponse.new(success, message, Hash.from_xml(response),
           :carrier => @@name,
           :xml => response,
@@ -501,20 +500,20 @@ module ActiveMerchant
       def response_status_node(document)
         document.elements['/*/Notifications/']
       end
-
+      
       def response_success?(document)
         %w{SUCCESS WARNING NOTE}.include? response_status_node(document).get_text('Severity').to_s
       end
-
+      
       def response_message(document)
         response_node = response_status_node(document)
         "#{response_status_node(document).get_text('Severity')} - #{response_node.get_text('Code')}: #{response_node.get_text('Message')}"
       end
-
+      
       def commit(request, test = false)
-        ssl_post(test ? TEST_URL : LIVE_URL, request.gsub("\n",''))
+        ssl_post(test ? TEST_URL : LIVE_URL, request.gsub("\n",''))        
       end
-
+      
       def handle_incorrect_currency_codes(currency)
         case currency
         when /UKL/i then 'GBP'
